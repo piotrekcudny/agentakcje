@@ -22,6 +22,10 @@ import {
   RefreshCw,
 } from "lucide-react";
 
+const INITIAL_ASSETS: Asset[] = [
+  { id: "inst_1", name: "Instrument_1", ticker: "Instrument_1" },
+];
+
 /**
  * Portfolio Optimizer (premium fintech, dark + glassmorphism)
  * - Mock: monthly return time series, with correlations via latent factors
@@ -155,13 +159,6 @@ type Asset = {
   ticker: string;
   colorHint?: string;
 };
-
-const DEFAULT_ASSETS: Asset[] = [
-  { id: "aapl", name: "Apple", ticker: "AAPL" },
-  { id: "tsla", name: "Tesla", ticker: "TSLA" },
-  { id: "gld", name: "Gold", ticker: "XAU" },
-  { id: "btc", name: "Bitcoin", ticker: "BTC" },
-];
 
 function generateMockSeries(assets: Asset[], months = 72, seed = 1337) {
   const rng = mulberry32(seed);
@@ -374,7 +371,7 @@ function parseCsvOhlcvCloseReturns(text: string) {
     if (prev <= 0) continue;
     rets.push(cur / prev - 1);
   }
-
+ 
   if (rets.length < 2) throw new Error("Po przeliczeniu zwrotów jest za mało punktów (min. 2).");
   return rets;
 }
@@ -393,36 +390,74 @@ function alignSeriesToCommonLength(seriesByAsset: number[][]) {
 // -------------------------
 export default function PortfolioOptimizerApp() {
     // --- AI commentary state ---
-  const [aiText, setAiText] = useState<string>("");
-  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [assets] = useState<Asset[]>(DEFAULT_ASSETS);
-  const [seed, setSeed] = useState(1337);
-  const [weights, setWeights] = useState<number[]>(() => {
-    const n = DEFAULT_ASSETS.length;
-    return Array.from({ length: n }, () => 1 / n);
-  });
+// --- AI commentary state ---
+const [applied, setApplied] = useState<boolean>(true);
+const [aiText, setAiText] = useState<string>("");
+const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "error">("idle");
 
-  const [uploadedNames, setUploadedNames] = useState<string[]>(() =>
-  Array.from({ length: DEFAULT_ASSETS.length }, () => "")
+// ✅ assets NAJPIERW
+const [assets, setAssets] = useState<Asset[]>(INITIAL_ASSETS);
+
+const [seed, setSeed] = useState(1337);
+
+// ✅ weights inicjalizuj z INITIAL_ASSETS, nie z assets
+const [weights, setWeights] = useState<number[]>(() => {
+  const n = INITIAL_ASSETS.length;
+  return Array.from({ length: n }, () => 1 / n);
+});
+
+// ✅ uploadedNames też z INITIAL_ASSETS
+const [uploadedNames, setUploadedNames] = useState<string[]>(() =>
+  Array.from({ length: INITIAL_ASSETS.length }, () => "")
 );
 
-  const [frontierGenerated, setFrontierGenerated] = useState(false);
-
+const [frontierGenerated, setFrontierGenerated] = useState(false);
 
     // Data series (monthly returns per asset). Start with mock; CSV upload can override per asset.
   const [seriesByAsset, setSeriesByAsset] = useState<number[][]>(() => {
-    return generateMockSeries(DEFAULT_ASSETS, 84, seed).seriesByAsset;
+        
+    return generateMockSeries(assets, 84, seed).seriesByAsset;
   });
+
+useEffect(() => {
+  setWeights((w) => {
+    if (w.length === assets.length) return w;
+    return Array.from({ length: assets.length }, (_, i) => w[i] ?? 1 / assets.length);
+  });
+}, [assets.length]);
+
 
   // Refresh mock series (keeps current assets length)
   useEffect(() => {
+
     const { seriesByAsset: next } = generateMockSeries(assets, 84, seed);
     setSeriesByAsset(next);
   }, [assets, seed]);
 
+  const addInstrument = () => {
+    const existingNumbers = assets
+      .map(a => {
+        const match = a.name.match(/^Instrument_(\d+)$/);
+        return match ? parseInt(match[1]) : 0;
+      })
+      .filter(n => n > 0);
+    const nextNum = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    const newName = `Instrument_${nextNum}`;
+    const newId = `inst_${Date.now()}`;
+    setAssets(prev => [...prev, { id: newId, name: newName, ticker: newName }]);
+  };
+
+  const removeInstrument = (id: string) => {
+    setAssets(prev => prev.filter(a => a.id !== id));
+  };
+
   async function handleUploadCsv(assetIndex: number, file: File) {
     const text = await readTextFile(file);
     const returnsMonthly = parseCsvOhlcvCloseReturns(text);
+    if (returnsMonthly.length < 12) {
+      alert(`Plik CSV musi zawierać co najmniej 12 punktów danych. Znaleziono: ${returnsMonthly.length}`);
+      return;
+    }
     setUploadedNames((prev) => {
       const next = [...prev];
       next[assetIndex] = file.name;
@@ -670,10 +705,10 @@ export default function PortfolioOptimizerApp() {
     <div className="flex flex-wrap gap-2 lg:flex-col lg:items-stretch">
       <button
         onClick={fetchAiCommentary}
-        disabled={!applied || aiStatus === "loading"}
+        disabled={!frontierGenerated || aiStatus === "loading"}
         className={cn(
           "inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm shadow-sm backdrop-blur transition",
-          !applied || aiStatus === "loading"
+          !frontierGenerated || aiStatus === "loading"
             ? "cursor-not-allowed border-white/10 bg-white/5 text-slate-400"
             : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
         )}
@@ -689,25 +724,6 @@ export default function PortfolioOptimizerApp() {
 </GlassCard>
 
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <GlassCard className="mt-6">
-  <div className="flex items-center justify-between">
-    <h2 className="text-base font-semibold">AI Commentary</h2>
-    <div className="text-xs text-slate-300">
-      {aiStatus === "loading"
-        ? "Generuję…"
-        : aiStatus === "error"
-        ? "Błąd"
-        : aiText
-        ? "Gotowe"
-        : "—"}
-    </div>
-  </div>
-
-        <div className="mt-3 whitespace-pre-line text-sm text-slate-300">
-          {aiText || "Kliknij „AI komentarz”, aby wygenerować interpretację wyników portfela."}
-          </div>
-          </GlassCard>
-
           <KpiCard
             icon={<TrendingUp className="h-5 w-5" />}
             title="Oczekiwany zwrot (ann.)"
@@ -745,6 +761,13 @@ export default function PortfolioOptimizerApp() {
               </div>
             </div>
 
+            <button
+              onClick={addInstrument}
+              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 shadow-sm backdrop-blur transition hover:bg-white/10"
+            >
+              Add Instrument
+            </button>
+
             <div className="mt-5 space-y-3">
               {assets.map((a, i) => {
                 const w = weights[i] ?? 0;
@@ -763,7 +786,14 @@ export default function PortfolioOptimizerApp() {
                             <span className="text-xs font-semibold text-slate-200">{a.ticker}</span>
                           </div>
                           <div>
-                            <div className="text-sm font-semibold">{a.name}</div>
+                            <input
+                              value={a.name}
+                              onChange={(e) => {
+                                const newName = e.target.value;
+                                setAssets(prev => prev.map(asset => asset.id === a.id ? { ...asset, name: newName, ticker: newName } : asset));
+                              }}
+                              className="text-sm font-semibold bg-transparent border-none outline-none text-slate-100"
+                            />
                             <div className="text-xs text-slate-300">
                               μ: {fmtPct(muA, 2)} • σ: {fmtPct(sdA, 2)}
                             </div>
@@ -810,14 +840,14 @@ export default function PortfolioOptimizerApp() {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center justify-between gap-4">
+                    <div className="mt-3 flex flex-col gap-2">
   <div className="text-xs text-slate-300">
     Wgraj CSV (Date,Close) • format jak Date,Open,High,Low,Close,Volume
   </div>
 
   <div className="flex items-center gap-3">
     {/* NAZWA PLIKU – TO JEST „OBOK INPUTA” */}
-    <div className="text-xs text-slate-400 min-w-[140px] text-right">
+    <div className="text-xs text-slate-400 min-w-[100px] text-right">
       {uploadedNames[i] ? (
         <span className="text-slate-100 font-semibold">
           {uploadedNames[i]}
@@ -831,7 +861,7 @@ export default function PortfolioOptimizerApp() {
     <input
       type="file"
       accept=".csv,text/csv"
-      className="text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:text-slate-100 hover:file:bg-white/20"
+      className="text-xs text-slate-300 file:mr-2 file:rounded-lg file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs file:text-slate-100 hover:file:bg-white/20"
       onChange={(e) => {
         const f = e.target.files?.[0];
         if (!f) return;
@@ -840,6 +870,13 @@ export default function PortfolioOptimizerApp() {
     />
   </div>
 </div>
+
+<button
+  onClick={() => removeInstrument(a.id)}
+  className="mt-2 inline-flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-3 py-1 text-xs text-red-300 shadow-sm backdrop-blur transition hover:bg-red-500/10"
+>
+  Remove
+</button>
 
 
                   </div>
@@ -879,7 +916,7 @@ export default function PortfolioOptimizerApp() {
                       tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
                       stroke="rgba(226,232,240,0.75)"
                       fontSize={12}
-                      label={{ value: "Volatility (ann.)", position: "insideBottom", offset: -8, fill: "rgba(226,232,240,0.75)" }}
+                      label={{ value: "Volatility (ann.)", position: "insideBottom", offset: 5, fill: "rgba(226,232,240,0.75)" }}
                     />
                     <YAxis
                       type="number"
@@ -896,6 +933,7 @@ export default function PortfolioOptimizerApp() {
                         borderRadius: 14,
                         backdropFilter: "blur(10px)",
                       }}
+                      itemStyle={{ color: "white" }}
                       formatter={tooltipFormatter}
                       labelFormatter={() => ""}
                     />
@@ -906,7 +944,7 @@ export default function PortfolioOptimizerApp() {
                     <Scatter
                       name="Portfolios"
                       data={frontier.cloud}
-                      fill="rgba(148,163,184,0.35)"
+                      fill="hsla(0, 11%, 95%, 0.21)"
                       line={false}
                       shape="circle"
                     />
@@ -922,11 +960,12 @@ export default function PortfolioOptimizerApp() {
                     <Scatter
                       name="Current"
                       data={[currentPoint]}
-                      fill="rgba(99,102,241,0.95)"
+                      fill="rgba(255,0,255,0.95)"
                       shape={(props: any) => (
                         <g>
-                          <circle cx={props.cx} cy={props.cy} r={7} fill="rgba(99,102,241,0.25)" />
-                          <circle cx={props.cx} cy={props.cy} r={4} fill="rgba(99,102,241,0.95)" />
+                          <circle cx={props.cx} cy={props.cy} r={12} fill="rgba(255,0,255,0.2)" />
+                          <circle cx={props.cx} cy={props.cy} r={8} fill="rgba(255,0,255,0.95)" />
+                          <text x={props.cx} y={props.cy - 15} textAnchor="middle" fill="magenta" fontSize="12" fontWeight="bold">Current</text>
                         </g>
                       )}
                     />
@@ -1023,6 +1062,7 @@ export default function PortfolioOptimizerApp() {
                         borderRadius: 14,
                         backdropFilter: "blur(10px)",
                       }}
+                      itemStyle={{ color: "white" }}
                       formatter={(v: any, name: any) => [fmtPct(v, 2), name]}
                       labelFormatter={(l) => `M${l}`}
                     />
