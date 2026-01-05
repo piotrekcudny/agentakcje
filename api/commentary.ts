@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = new OpenAI({ 
+  apiKey: process.env.VITE_OPENAI_API_KEY // Używamy process.env zamiast import.meta.env
+});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel Serverless Functions obsługują tylko metody określone przez Ciebie
