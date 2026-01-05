@@ -1,12 +1,10 @@
 import OpenAI from "openai";
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const client = new OpenAI({ 
-  apiKey: process.env.VITE_OPENAI_API_KEY // Używamy process.env zamiast import.meta.env
-});
+// Klient zainicjalizowany raz poza handlerem (optymalizacja)
+const client = new OpenAI(); 
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Vercel Serverless Functions obsługują tylko metody określone przez Ciebie
+export default async function handler(req, res) {
+  // 1. Zabezpieczenie metody
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -14,41 +12,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const facts = req.body;
 
-    const prompt = `
-Jesteś analitykiem inwestycyjnym z wybitnymi zdolnościami w analizach portfelowych.
-
-Napisz krótki komentarz do wyników portfela, który skonfigurował użytkownik.
-
-Zasady:
-
-- język: polski
-
-- 4–7 punktów w formie listy (każdy punkt w osobnej linii, zaczynając od "• ")
-
-- bez porad inwestycyjnych typu "kup/sprzedaj"
-
-- skup się na interpretacji: zwrot, ryzyko, Sharpe, koncentracja wag, korelacje, jakość danych
-
-- weź pod uwagę korelacje i wagi aktywów
-
-- oceń punktowo portfel według własnych kryteriów (np. 1-10) i uzasadnij ocenę
-
-- UŻYWAJ TYLKO PODANYCH DANYCH, NIE WYMYSŁAJ LICZB ANI FAKTÓW
-
-Wskaż co można by poprawić.
-
-Dane (roczne, zannualizowane znajdziesz w załączonych plikach
-${JSON.stringify(facts, null, 2)}
-`;
-
+    // 2. Zapytanie do OpenAI
     const response = await client.chat.completions.create({
-      model: "gpt-4o-mini", // Zalecam gpt-4o-mini - jest tańszy i szybszy
-      messages: [{ role: "user", content: prompt }],
+      model: "gpt-4o-mini", // Szybki i tani model
+      messages: [
+        { 
+          role: "system", 
+          content: "Jesteś ekspertem analizy portfelowej. Odpowiadaj w punktach po polsku." 
+        },
+        { 
+          role: "user", 
+          content: `Przeanalizuj te dane portfela: ${JSON.stringify(facts)}` 
+        }
+      ],
       max_tokens: 500,
     });
 
+    // 3. Wysyłka odpowiedzi do frontendu
     return res.status(200).json({ text: response.choices[0].message.content });
-  } catch (err: unknown) {
-    return res.status(500).json({ error: String((err as Error)?.message || err) });
+
+  } catch (err) {
+    console.error("Błąd serwera:", err);
+    return res.status(500).json({ error: "Błąd podczas generowania komentarza." });
   }
 }
