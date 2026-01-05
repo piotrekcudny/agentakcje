@@ -11,7 +11,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
     if (!apiKey) {
       res.status(500).json({ error: "Missing OPENAI_API_KEY" });
       return;
