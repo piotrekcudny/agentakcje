@@ -1,46 +1,51 @@
 import OpenAI from "openai";
 
-export const config = {
-  runtime: "nodejs",
-};
+const client = new OpenAI({ apiKey: process.env.VITE_OPENAI_API_KEY });
 
-export default async function handler(req: any, res: any) {
-  if (req.method !== "POST") {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
+export default async function handler(req, res) {
+  // Vercel Serverless Functions obsługują tylko metody określone przez Ciebie
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-    if (!apiKey) {
-      res.status(500).json({ error: "Missing OPENAI_API_KEY" });
-      return;
-    }
-
-    const client = new OpenAI({ apiKey });
-
     const facts = req.body;
 
     const prompt = `
-Jesteś analitykiem portfelowym. Masz TYLKO dane z JSON poniżej.
+Jesteś analitykiem inwestycyjnym z wybitnymi zdolnościami w analizach portfelowych.
+
+Napisz krótki komentarz do wyników portfela, który skonfigurował użytkownik.
+
 Zasady:
+
 - język: polski
-- 4–7 punktów, każdy zaczyna się od "• "
-- używaj wyłącznie liczb z JSON, nie wymyślaj
-- bez porad "kup/sprzedaj"
-JSON:
-${JSON.stringify(facts)}
+
+- 4–7 punktów w formie listy (każdy punkt w osobnej linii, zaczynając od "• ")
+
+- bez porad inwestycyjnych typu "kup/sprzedaj"
+
+- skup się na interpretacji: zwrot, ryzyko, Sharpe, koncentracja wag, korelacje, jakość danych
+
+- weź pod uwagę korelacje i wagi aktywów
+
+- oceń punktowo portfel według własnych kryteriów (np. 1-10) i uzasadnij ocenę
+
+- UŻYWAJ TYLKO PODANYCH DANYCH, NIE WYMYSŁAJ LICZB ANI FAKTÓW
+
+Wskaż co można by poprawić.
+
+Dane (roczne, zannualizowane znajdziesz w załączonych plikach
+${JSON.stringify(facts, null, 2)}
 `;
 
-    const response = await client.responses.create({
-      model: "gpt-5-mini",
-      input: prompt,
-      temperature: 0.2,
+    const response = await client.chat.completions.create({
+      model: "gpt-5.1-mini", // Zalecam gpt-4o-mini - jest tańszy i szybszy
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 500,
     });
 
-    res.status(200).json({ text: response.output_text });
-  } catch (err: any) {
-    const msg = err?.message ?? String(err);
-    res.status(500).json({ error: msg });
+    return res.status(200).json({ text: response.choices[0].message.content });
+  } catch (err) {
+    return res.status(500).json({ error: String(err?.message || err) });
   }
 }

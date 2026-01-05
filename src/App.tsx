@@ -593,7 +593,7 @@ useEffect(() => {
 
       console.log("AI payload snapshot:", payload);
 
-      const res = await fetch("/api/ai/commentary", {
+      const res = await fetch("/api/commentary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
