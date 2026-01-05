@@ -1,8 +1,9 @@
 import OpenAI from "openai";
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const client = new OpenAI({ apiKey: process.env.VITE_OPENAI_API_KEY });
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export default async function handler(req, res) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Vercel Serverless Functions obsługują tylko metody określone przez Ciebie
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -39,13 +40,13 @@ ${JSON.stringify(facts, null, 2)}
 `;
 
     const response = await client.chat.completions.create({
-      model: "gpt-5.1-mini", // Zalecam gpt-4o-mini - jest tańszy i szybszy
+      model: "gpt-4o-mini", // Zalecam gpt-4o-mini - jest tańszy i szybszy
       messages: [{ role: "user", content: prompt }],
       max_tokens: 500,
     });
 
     return res.status(200).json({ text: response.choices[0].message.content });
-  } catch (err) {
-    return res.status(500).json({ error: String(err?.message || err) });
+  } catch (err: unknown) {
+    return res.status(500).json({ error: String((err as Error)?.message || err) });
   }
 }
